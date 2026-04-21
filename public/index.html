@@ -336,13 +336,16 @@
       border-radius: 12px;
       font-size: .78rem;
     }
-    #commentary-text p {
-      margin-bottom: 1em;
-      padding: 12px 16px;
-      background: var(--surface);
-      border-radius: 10px;
-      border-left: 3px solid var(--accent);
-      animation: fadeUp .3s ease;
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .dot-pulse {
+      display: inline-block;
+      width: 7px; height: 7px;
+      background: var(--text-dim);
+      border-radius: 50%;
+      animation: bounce 1.2s infinite;
     }
   </style>
 </head>
@@ -402,12 +405,26 @@
     <div id="game-error" class="error-bar" style="margin-top:12px"></div>
 
     <div id="commentary-box" style="display:none;margin-top:24px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-        <span style="font-size:1.1rem">🎙️</span>
-        <span style="font-weight:600">比赛解说</span>
-        <span id="commentary-live" style="font-size:.75rem;color:var(--accent);display:none">● 直播中</span>
+      <!-- 比赛标题栏 -->
+      <div id="match-header" style="background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid #2a2a4a;border-radius:12px;padding:16px 20px;margin-bottom:16px;display:none">
+        <div style="text-align:center;font-size:.72rem;color:#888;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px">⚡ 比赛直播</div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:20px">
+          <div id="mh-team-a" style="text-align:right;flex:1"></div>
+          <div style="font-size:1.4rem;font-weight:800;color:#fb7185;padding:4px 14px;border:2px solid #fb7185;border-radius:8px;flex-shrink:0">VS</div>
+          <div id="mh-team-b" style="text-align:left;flex:1"></div>
+        </div>
       </div>
-      <div id="commentary-text" style="line-height:1.9;font-size:.95rem;white-space:pre-wrap"></div>
+
+      <!-- 解说流 -->
+      <div id="commentary-feed"></div>
+
+      <!-- loading dots -->
+      <div id="commentary-loading" style="display:none;padding:16px;text-align:center">
+        <div style="display:inline-flex;gap:6px;align-items:center;color:#888;font-size:.85rem">
+          <span class="dot-pulse"></span><span class="dot-pulse" style="animation-delay:.2s"></span><span class="dot-pulse" style="animation-delay:.4s"></span>
+          &nbsp;解说员正在激情发挥…
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -812,19 +829,21 @@ function initGamePicker() {
 function toggleTeam(id) {
   if (teamA.includes(id)) {
     teamA = teamA.filter(x => x !== id);
-    teamB.push(id);
+    if (teamB.length < 2) teamB.push(id);
   } else if (teamB.includes(id)) {
     teamB = teamB.filter(x => x !== id);
+    if (teamA.length < 2) teamA.push(id);
   } else {
-    teamA.push(id);
+    if (teamA.length < 2) teamA.push(id);
+    else if (teamB.length < 2) teamB.push(id);
   }
   renderTeams();
 }
 
 function randomTeams() {
   const ids = UPS.map(u => u.id).sort(() => Math.random() - .5);
-  teamA = ids.slice(0, 3);
-  teamB = ids.slice(3);
+  teamA = ids.slice(0, 2);
+  teamB = ids.slice(2, 4);
   renderTeams();
 }
 
@@ -850,22 +869,114 @@ function setPreset(text) {
   document.getElementById("game-rule").value = text;
 }
 
+// 段落序号 → 样式配置
+const PARA_STYLES = [
+  { icon:"🎙️", label:"开场",   accent:"#60a5fa", bg:"#0c1929" },
+  { icon:"⚡",  label:"进行中", accent:"#fb923c", bg:"#1f0f00" },
+  { icon:"🔥",  label:"高潮",   accent:"#fb7185", bg:"#1f0007" },
+  { icon:"😱",  label:"意外",   accent:"#c084fc", bg:"#170a2e" },
+  { icon:"💥",  label:"决战",   accent:"#f472b6", bg:"#1f0018" },
+  { icon:"🏆",  label:"结果",   accent:"#34d399", bg:"#001f10" },
+];
+
+function getParaStyle(idx) {
+  return PARA_STYLES[Math.min(idx, PARA_STYLES.length - 1)];
+}
+
+let paraCount = 0;
+let currentCard = null;    // 当前正在打字的卡片 p 元素
+let typeQueue = [];
+let isTyping = false;
+
+function flushTypeQueue() {
+  if (isTyping || typeQueue.length === 0) return;
+  isTyping = true;
+  const { el, text, onDone } = typeQueue.shift();
+  let i = 0;
+  const speed = Math.max(8, Math.min(25, 2000 / text.length)); // 自适应速度
+  function tick() {
+    if (i < text.length) {
+      el.textContent += text[i++];
+      el.closest(".commentary-card")?.scrollIntoView({ behavior: "smooth", block: "end" });
+      setTimeout(tick, speed);
+    } else {
+      isTyping = false;
+      onDone?.();
+      flushTypeQueue();
+    }
+  }
+  tick();
+}
+
+function typeText(el, text, onDone) {
+  typeQueue.push({ el, text, onDone });
+  flushTypeQueue();
+}
+
+function addCommentaryCard(text, idx) {
+  const feed = document.getElementById("commentary-feed");
+  const style = getParaStyle(idx);
+  const isLast = text.includes("获胜") || text.includes("冠军") || text.includes("胜利") || text.includes("赢了");
+
+  const card = document.createElement("div");
+  card.className = "commentary-card";
+  card.style.cssText = `
+    background:${style.bg};
+    border:1px solid ${style.accent}33;
+    border-left:3px solid ${style.accent};
+    border-radius:10px;
+    padding:14px 16px;
+    margin-bottom:12px;
+    animation:slideIn .3s ease;
+    ${isLast ? `box-shadow:0 0 20px ${style.accent}44;` : ""}
+  `;
+
+  const meta = document.createElement("div");
+  meta.style.cssText = `display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:.72rem;color:${style.accent};font-weight:600;letter-spacing:.06em;text-transform:uppercase`;
+  meta.innerHTML = `<span>${style.icon}</span><span>${style.label}</span><span style="margin-left:auto;opacity:.5">第 ${idx+1} 段</span>`;
+
+  const body = document.createElement("p");
+  body.style.cssText = `margin:0;line-height:1.85;font-size:.92rem;color:#e8e8e8;min-height:1.2em`;
+
+  card.appendChild(meta);
+  card.appendChild(body);
+  feed.appendChild(card);
+
+  card.scrollIntoView({ behavior: "smooth", block: "end" });
+  return body;
+}
+
 async function startGame() {
   const rule = document.getElementById("game-rule").value.trim();
   if (!rule) { showGameError("请输入游戏规则"); return; }
-  if (teamA.length === 0 || teamB.length === 0) { showGameError("两队都需要至少一名成员"); return; }
+  if (teamA.length === 0 || teamB.length === 0) { showGameError("两队各需要2名成员"); return; }
 
   hideGameError();
   const btn = document.getElementById("start-game-btn");
   btn.disabled = true;
   btn.textContent = "🎬 比赛进行中…";
 
+  // 重置
+  paraCount = 0; currentCard = null; typeQueue = []; isTyping = false;
+  const feed = document.getElementById("commentary-feed");
+  feed.innerHTML = "";
+
+  // 显示比赛标题栏
   const box = document.getElementById("commentary-box");
-  const textEl = document.getElementById("commentary-text");
-  const liveEl = document.getElementById("commentary-live");
   box.style.display = "block";
-  textEl.innerHTML = "";
-  liveEl.style.display = "inline";
+  const mhTeamA = document.getElementById("mh-team-a");
+  const mhTeamB = document.getElementById("mh-team-b");
+  mhTeamA.innerHTML = teamA.map(id => {
+    const up = UPS.find(u=>u.id===id);
+    return `<div style="font-size:.85rem;font-weight:600;color:#fb7185">${up.emoji} ${NAME_MAP[id]}</div>`;
+  }).join("");
+  mhTeamB.innerHTML = teamB.map(id => {
+    const up = UPS.find(u=>u.id===id);
+    return `<div style="font-size:.85rem;font-weight:600;color:#38bdf8">${up.emoji} ${NAME_MAP[id]}</div>`;
+  }).join("");
+  document.getElementById("match-header").style.display = "block";
+
+  document.getElementById("commentary-loading").style.display = "block";
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 
   let buffer = "";
@@ -882,8 +993,11 @@ async function startGame() {
       throw new Error(err.error || `HTTP ${resp.status}`);
     }
 
+    document.getElementById("commentary-loading").style.display = "none";
+
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
+    let firstChunk = true;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -895,33 +1009,60 @@ async function startGame() {
         if (data === "[DONE]") break;
         try {
           const { text } = JSON.parse(data);
-          if (text) {
-            buffer += text;
-            // 按换行分段渲染
-            const parts = buffer.split("\n\n");
-            buffer = parts.pop();
-            parts.forEach(p => {
-              if (p.trim()) {
-                const para = document.createElement("p");
-                para.textContent = p.trim();
-                textEl.appendChild(para);
-                para.scrollIntoView({ behavior: "smooth", block: "end" });
-              }
-            });
+          if (!text) continue;
+
+          if (firstChunk) {
+            firstChunk = false;
+            // 创建第一张卡片
+            currentCard = addCommentaryCard("", paraCount);
           }
+
+          buffer += text;
+
+          // 按双换行拆段
+          const parts = buffer.split(/\n\n+/);
+          buffer = parts.pop(); // 最后一段可能未完成
+
+          for (let i = 0; i < parts.length; i++) {
+            const p = parts[i].replace(/\n/g, " ").trim();
+            if (!p) continue;
+            // 当前卡片追加文字
+            if (currentCard) {
+              const cardEl = currentCard;
+              const idx = paraCount;
+              typeText(cardEl, p, () => {
+                // 段落完成后创建下一张卡片
+                paraCount++;
+                currentCard = addCommentaryCard("", paraCount);
+              });
+            }
+          }
+
+          // 单换行也分小段（逐字追加进当前卡片）
+          const singleParts = buffer.split(/\n/);
+          if (singleParts.length > 1) {
+            buffer = singleParts.pop();
+            // 把单换行之前的部分当作追加文字推进当前卡片
+            const chunk = singleParts.join(" ").trim();
+            if (chunk && currentCard) {
+              const cardEl = currentCard;
+              typeText(cardEl, chunk, null);
+            }
+          }
+
         } catch {}
       }
     }
-    // 渲染剩余内容
-    if (buffer.trim()) {
-      const para = document.createElement("p");
-      para.textContent = buffer.trim();
-      textEl.appendChild(para);
+
+    // 渲染剩余
+    if (buffer.trim() && currentCard) {
+      typeText(currentCard, buffer.trim(), null);
     }
+
   } catch (e) {
+    document.getElementById("commentary-loading").style.display = "none";
     showGameError(e.message || "比赛出错了");
   } finally {
-    liveEl.style.display = "none";
     btn.disabled = false;
     btn.textContent = "🎬 再来一场！";
   }
