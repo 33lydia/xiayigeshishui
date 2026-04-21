@@ -327,8 +327,9 @@
       position: relative;
     }
     .picker-avatar:hover { transform: scale(1.1); }
-    .picker-avatar.in-a { border-color: var(--accent); }
-    .picker-avatar.in-b { border-color: var(--accent2); }
+    .picker-avatar.in-a { border-color: #fb7185; }
+    .picker-avatar.in-b { border-color: #38bdf8; }
+    .picker-avatar.in-c { border-color: #34d399; }
     .team-chip {
       display: flex; align-items: center; gap: 4px;
       padding: 3px 8px;
@@ -380,22 +381,14 @@
     </div>
 
     <div class="game-block" style="margin-top:20px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <label class="game-label">分组</label>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <label class="game-label" style="margin:0">分组（3组各2人）</label>
         <button class="preset-btn" onclick="randomTeams()">🎲 随机分组</button>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div>
-          <div style="font-size:.8rem;color:var(--accent);margin-bottom:6px;font-weight:600">队伍 A</div>
-          <div id="team-a" class="team-slot"></div>
-        </div>
-        <div>
-          <div style="font-size:.8rem;color:var(--accent2);margin-bottom:6px;font-weight:600">队伍 B</div>
-          <div id="team-b" class="team-slot"></div>
-        </div>
-      </div>
-      <div style="margin-top:10px;font-size:.78rem;color:var(--text-dim)">点击下方头像调整队伍</div>
-      <div id="up-picker" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
+      <div id="teams-container" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px"></div>
+      <div id="unassigned-row" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:.8rem;padding:6px 0;border-top:1px solid var(--border)"></div>
+      <div style="font-size:.75rem;color:var(--text-dim);margin-bottom:6px">点击头像循环切换所在组</div>
+      <div id="up-picker" style="display:flex;gap:8px;flex-wrap:wrap"></div>
     </div>
 
     <button id="start-game-btn" onclick="startGame()" style="width:100%;margin-top:20px;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:600;cursor:pointer;transition:opacity .2s">
@@ -407,12 +400,8 @@
     <div id="commentary-box" style="display:none;margin-top:24px">
       <!-- 比赛标题栏 -->
       <div id="match-header" style="background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid #2a2a4a;border-radius:12px;padding:16px 20px;margin-bottom:16px;display:none">
-        <div style="text-align:center;font-size:.72rem;color:#888;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px">⚡ 比赛直播</div>
-        <div style="display:flex;align-items:center;justify-content:center;gap:20px">
-          <div id="mh-team-a" style="text-align:right;flex:1"></div>
-          <div style="font-size:1.4rem;font-weight:800;color:#fb7185;padding:4px 14px;border:2px solid #fb7185;border-radius:8px;flex-shrink:0">VS</div>
-          <div id="mh-team-b" style="text-align:left;flex:1"></div>
-        </div>
+        <div style="text-align:center;font-size:.72rem;color:#888;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px">⚡ 比赛直播</div>
+        <div class="match-teams-row" style="display:flex;align-items:flex-start;justify-content:center;gap:8px"></div>
       </div>
 
       <!-- 解说流 -->
@@ -806,8 +795,35 @@ function switchTab(tab) {
 }
 
 // ── 比赛功能 ──────────────────────────────────────────────────────────────
-let teamA = [], teamB = [];
+// 3组2人同时参赛
+let teams = [[], [], []]; // teams[0..2] 各含2个id
 const NAME_MAP = { yuge:"雨哥", amazong:"啊吗粽", liyuan:"力元君", sanmu:"三木", zhbie:"哲别", daxia:"徐大虾" };
+const NICKNAME_MAP = { amazong:"瑞哥", sanmu:"神", zhbie:"哲别", daxia:"虾哥" };
+
+// 固定搭档队名（key = 两id排序后用_连接）
+const PAIR_NAMES = {
+  "liyuan_yuge":   "黑白双煞",
+  "amazong_sanmu": "Double J",
+  "daxia_zhbie":   "虾折腾",
+  "amazong_liyuan":"一生之敌",
+  "liyuan_zhbie":  "AA兄弟",
+  "amazong_zhbie": "父子组",
+  "daxia_sanmu":   "川渝组",
+  "sanmu_yuge":    "冠军组",
+};
+
+function pairKey(a, b) {
+  return [a, b].sort().join("_");
+}
+
+function getPairName(a, b) {
+  return PAIR_NAMES[pairKey(a, b)] || null;
+}
+
+// 随机有趣队名（当没有固定名时用）
+const FUN_NAMES = ["神秘组合","临时工","试一下","宿命对决","意外之喜","随机应变","命中注定","就这样吧"];
+let funNameIdx = 0;
+function getFunName() { return FUN_NAMES[funNameIdx++ % FUN_NAMES.length]; }
 
 function initGamePicker() {
   const picker = document.getElementById("up-picker");
@@ -820,48 +836,85 @@ function initGamePicker() {
     el.style.color = up.color;
     el.title = up.name;
     el.textContent = up.emoji;
-    el.addEventListener("click", () => toggleTeam(up.id));
+    el.addEventListener("click", () => cycleTeam(up.id));
     picker.appendChild(el);
   });
   randomTeams();
 }
 
-function toggleTeam(id) {
-  if (teamA.includes(id)) {
-    teamA = teamA.filter(x => x !== id);
-    if (teamB.length < 2) teamB.push(id);
-  } else if (teamB.includes(id)) {
-    teamB = teamB.filter(x => x !== id);
-    if (teamA.length < 2) teamA.push(id);
-  } else {
-    if (teamA.length < 2) teamA.push(id);
-    else if (teamB.length < 2) teamB.push(id);
+// 点击头像：未分组→组1→组2→组3→未分组
+function cycleTeam(id) {
+  const cur = teams.findIndex(t => t.includes(id));
+  if (cur >= 0) teams[cur] = teams[cur].filter(x => x !== id);
+  // 找下一个未满的组（从cur+1开始循环）
+  let next = -1;
+  for (let i = 1; i <= 3; i++) {
+    const idx = (cur + i) % 4; // 0=未分组,1/2/3=组
+    if (idx === 0) { next = -1; break; } // 回到未分组
+    if (teams[idx-1].length < 2) { next = idx-1; break; }
   }
+  if (next >= 0) teams[next].push(id);
   renderTeams();
 }
 
 function randomTeams() {
+  funNameIdx = 0;
   const ids = UPS.map(u => u.id).sort(() => Math.random() - .5);
-  teamA = ids.slice(0, 2);
-  teamB = ids.slice(2, 4);
+  teams = [ids.slice(0,2), ids.slice(2,4), ids.slice(4,6)];
   renderTeams();
 }
 
+const TEAM_COLORS = ["#fb7185","#38bdf8","#34d399"];
+const TEAM_LABELS = ["红队","蓝队","绿队"];
+
+function getTeamDisplayName(idx) {
+  const t = teams[idx];
+  if (t.length === 2) {
+    return getPairName(t[0], t[1]) || getFunName();
+  }
+  return TEAM_LABELS[idx];
+}
+
 function renderTeams() {
-  const slotA = document.getElementById("team-a");
-  const slotB = document.getElementById("team-b");
-  slotA.innerHTML = teamA.map(id => {
-    const up = UPS.find(u => u.id === id);
-    return `<div class="team-chip"><span>${up.emoji}</span><span>${NAME_MAP[id]}</span></div>`;
-  }).join("");
-  slotB.innerHTML = teamB.map(id => {
-    const up = UPS.find(u => u.id === id);
-    return `<div class="team-chip"><span>${up.emoji}</span><span>${NAME_MAP[id]}</span></div>`;
-  }).join("");
+  funNameIdx = 0; // 重置，保证每次render顺序一致
+  const container = document.getElementById("teams-container");
+  container.innerHTML = "";
+  for (let i = 0; i < 3; i++) {
+    const color = TEAM_COLORS[i];
+    const name = getTeamDisplayName(i);
+    const members = teams[i];
+    const div = document.createElement("div");
+    div.style.cssText = `background:var(--surface);border:1px solid ${color}44;border-top:2px solid ${color};border-radius:10px;padding:12px;`;
+    div.innerHTML = `
+      <div style="font-size:.75rem;font-weight:700;color:${color};margin-bottom:8px;letter-spacing:.04em">${name}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;min-height:36px">
+        ${members.map(id => {
+          const up = UPS.find(u=>u.id===id);
+          return `<div class="team-chip" style="border:1px solid ${color}55"><span>${up.emoji}</span><span>${NAME_MAP[id]}</span></div>`;
+        }).join("") || `<span style="font-size:.75rem;color:var(--text-dim)">空</span>`}
+      </div>
+    `;
+    container.appendChild(div);
+  }
+
+  // 未分配的人
+  const unassigned = UPS.filter(u => !teams.flat().includes(u.id));
+  const unDiv = document.getElementById("unassigned-row");
+  if (unassigned.length) {
+    unDiv.style.display = "flex";
+    unDiv.innerHTML = `<span style="font-size:.75rem;color:var(--text-dim);align-self:center">未分配：</span>` +
+      unassigned.map(u => `<span style="font-size:.8rem;color:var(--text-dim)">${u.emoji}${NAME_MAP[u.id]}</span>`).join("");
+  } else {
+    unDiv.style.display = "none";
+  }
+
+  // 更新picker头像状态
   document.querySelectorAll(".picker-avatar").forEach(el => {
-    el.classList.remove("in-a", "in-b");
-    if (teamA.includes(el.dataset.id)) el.classList.add("in-a");
-    else if (teamB.includes(el.dataset.id)) el.classList.add("in-b");
+    el.classList.remove("in-a","in-b","in-c");
+    const ti = teams.findIndex(t => t.includes(el.dataset.id));
+    if (ti === 0) el.classList.add("in-a");
+    else if (ti === 1) el.classList.add("in-b");
+    else if (ti === 2) el.classList.add("in-c");
   });
 }
 
@@ -949,7 +1002,7 @@ function addCommentaryCard(text, idx) {
 async function startGame() {
   const rule = document.getElementById("game-rule").value.trim();
   if (!rule) { showGameError("请输入游戏规则"); return; }
-  if (teamA.length === 0 || teamB.length === 0) { showGameError("两队各需要2名成员"); return; }
+  if (teams.some(t => t.length !== 2)) { showGameError("请确保3组各有2名成员"); return; }
 
   hideGameError();
   const btn = document.getElementById("start-game-btn");
@@ -958,23 +1011,23 @@ async function startGame() {
 
   // 重置
   paraCount = 0; currentCard = null; typeQueue = []; isTyping = false;
+  funNameIdx = 0;
   const feed = document.getElementById("commentary-feed");
   feed.innerHTML = "";
 
   // 显示比赛标题栏
   const box = document.getElementById("commentary-box");
   box.style.display = "block";
-  const mhTeamA = document.getElementById("mh-team-a");
-  const mhTeamB = document.getElementById("mh-team-b");
-  mhTeamA.innerHTML = teamA.map(id => {
-    const up = UPS.find(u=>u.id===id);
-    return `<div style="font-size:.85rem;font-weight:600;color:#fb7185">${up.emoji} ${NAME_MAP[id]}</div>`;
-  }).join("");
-  mhTeamB.innerHTML = teamB.map(id => {
-    const up = UPS.find(u=>u.id===id);
-    return `<div style="font-size:.85rem;font-weight:600;color:#38bdf8">${up.emoji} ${NAME_MAP[id]}</div>`;
-  }).join("");
-  document.getElementById("match-header").style.display = "block";
+  const matchHeader = document.getElementById("match-header");
+  matchHeader.style.display = "block";
+  matchHeader.querySelector(".match-teams-row").innerHTML = teams.map((t, i) => {
+    const color = TEAM_COLORS[i];
+    const name = getTeamDisplayName(i);
+    return `<div style="text-align:center;flex:1">
+      <div style="font-size:.7rem;color:${color};font-weight:700;letter-spacing:.06em;margin-bottom:4px">${name}</div>
+      ${t.map(id => { const up=UPS.find(u=>u.id===id); return `<div style="font-size:.82rem;color:#ccc">${up.emoji} ${NAME_MAP[id]}</div>`; }).join("")}
+    </div>`;
+  }).join(`<div style="font-size:1.1rem;font-weight:800;color:#888;align-self:center;padding:0 4px">·</div>`);
 
   document.getElementById("commentary-loading").style.display = "block";
   box.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -985,7 +1038,7 @@ async function startGame() {
     const resp = await fetch("/api/game", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ gameRule: rule, teamA, teamB }),
+      body: JSON.stringify({ gameRule: rule, teams, teamNames: teams.map((_,i) => getTeamDisplayName(i)) }),
     });
 
     if (!resp.ok) {
