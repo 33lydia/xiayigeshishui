@@ -261,16 +261,156 @@
       font-size: .75rem;
       border-top: 1px solid var(--border);
     }
+
+    /* ── Tab buttons ── */
+    .tab-btn {
+      padding: 8px 22px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-dim);
+      font-size: .9rem;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* ── Game styles ── */
+    .game-label {
+      display: block;
+      font-size: .85rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .game-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+    }
+    .preset-btn {
+      padding: 5px 12px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: .8rem;
+      cursor: pointer;
+      transition: border-color .2s;
+    }
+    .preset-btn:hover { border-color: var(--accent); }
+    .team-slot {
+      min-height: 48px;
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      border: 1px dashed var(--border);
+    }
+    .picker-avatar {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color .2s, transform .15s;
+      position: relative;
+    }
+    .picker-avatar:hover { transform: scale(1.1); }
+    .picker-avatar.in-a { border-color: var(--accent); }
+    .picker-avatar.in-b { border-color: var(--accent2); }
+    .team-chip {
+      display: flex; align-items: center; gap: 4px;
+      padding: 3px 8px;
+      background: var(--surface2);
+      border-radius: 12px;
+      font-size: .78rem;
+    }
+    #commentary-text p {
+      margin-bottom: 1em;
+      padding: 12px 16px;
+      background: var(--surface);
+      border-radius: 10px;
+      border-left: 3px solid var(--accent);
+      animation: fadeUp .3s ease;
+    }
   </style>
 </head>
 <body>
 
 <header>
   <h1>下一个是谁 · <span>UP主语录</span></h1>
-  <p>选一位 UP 主，输入你的 Claude API Key，开始对话</p>
+  <p>选一位 UP 主开始对话，或者模拟一场他们之间的比赛</p>
+  <div style="margin-top:16px;display:flex;gap:10px;justify-content:center">
+    <button class="tab-btn active" id="tab-chat" onclick="switchTab('chat')">💬 对话</button>
+    <button class="tab-btn" id="tab-game" onclick="switchTab('game')">🎮 模拟比赛</button>
+  </div>
 </header>
 
+<div id="section-chat">
 <div class="up-grid" id="up-grid"></div>
+
+</div><!-- /section-chat -->
+
+<!-- ── 模拟比赛区域 ── -->
+<div id="section-game" style="display:none">
+  <div style="max-width:760px;margin:32px auto;padding:0 24px">
+
+    <div class="game-block">
+      <label class="game-label">游戏规则</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px" id="preset-btns">
+        <button class="preset-btn" onclick="setPreset('足球踢踢踢：每人轮流颠球，掉球就淘汰，坚持最久的队伍获胜。')">⚽ 足球踢踢踢</button>
+        <button class="preset-btn" onclick="setPreset('击鼓传花：音乐停时手持气球的人要表演节目，连续失误两次淘汰，最后一队获胜。')">🎵 击鼓传花</button>
+        <button class="preset-btn" onclick="setPreset('猜词接力：每队队员背对屏幕，由队友用动作提示猜词，1分钟内猜对最多的队伍获胜。')">🎭 猜词接力</button>
+      </div>
+      <textarea id="game-rule" rows="3" placeholder="输入自定义游戏规则，或点上方预设…" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:.9rem;resize:vertical;outline:none"></textarea>
+    </div>
+
+    <div class="game-block" style="margin-top:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <label class="game-label">分组</label>
+        <button class="preset-btn" onclick="randomTeams()">🎲 随机分组</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-size:.8rem;color:var(--accent);margin-bottom:6px;font-weight:600">队伍 A</div>
+          <div id="team-a" class="team-slot"></div>
+        </div>
+        <div>
+          <div style="font-size:.8rem;color:var(--accent2);margin-bottom:6px;font-weight:600">队伍 B</div>
+          <div id="team-b" class="team-slot"></div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:.78rem;color:var(--text-dim)">点击下方头像调整队伍</div>
+      <div id="up-picker" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
+    </div>
+
+    <button id="start-game-btn" onclick="startGame()" style="width:100%;margin-top:20px;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:600;cursor:pointer;transition:opacity .2s">
+      🎬 开始比赛！
+    </button>
+
+    <div id="game-error" class="error-bar" style="margin-top:12px"></div>
+
+    <div id="commentary-box" style="display:none;margin-top:24px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+        <span style="font-size:1.1rem">🎙️</span>
+        <span style="font-weight:600">比赛解说</span>
+        <span id="commentary-live" style="font-size:.75rem;color:var(--accent);display:none">● 直播中</span>
+      </div>
+      <div id="commentary-text" style="line-height:1.9;font-size:.95rem;white-space:pre-wrap"></div>
+    </div>
+  </div>
+</div>
 
 <section id="chat-section">
   <div class="chat-header">
@@ -637,6 +777,163 @@ function hideError() {
 
 function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ── Tab 切换 ──────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.getElementById("section-chat").style.display = tab === "chat" ? "" : "none";
+  document.getElementById("section-game").style.display = tab === "game" ? "" : "none";
+  document.getElementById("tab-chat").classList.toggle("active", tab === "chat");
+  document.getElementById("tab-game").classList.toggle("active", tab === "game");
+  if (tab === "game") initGamePicker();
+}
+
+// ── 比赛功能 ──────────────────────────────────────────────────────────────
+let teamA = [], teamB = [];
+const NAME_MAP = { yuge:"雨哥", amazong:"啊吗粽", liyuan:"力元君", sanmu:"三木", zhbie:"哲别", daxia:"徐大虾" };
+
+function initGamePicker() {
+  const picker = document.getElementById("up-picker");
+  if (picker.children.length) return;
+  UPS.forEach(up => {
+    const el = document.createElement("div");
+    el.className = "picker-avatar";
+    el.dataset.id = up.id;
+    el.style.background = up.bgColor;
+    el.style.color = up.color;
+    el.title = up.name;
+    el.textContent = up.emoji;
+    el.addEventListener("click", () => toggleTeam(up.id));
+    picker.appendChild(el);
+  });
+  randomTeams();
+}
+
+function toggleTeam(id) {
+  if (teamA.includes(id)) {
+    teamA = teamA.filter(x => x !== id);
+    teamB.push(id);
+  } else if (teamB.includes(id)) {
+    teamB = teamB.filter(x => x !== id);
+  } else {
+    teamA.push(id);
+  }
+  renderTeams();
+}
+
+function randomTeams() {
+  const ids = UPS.map(u => u.id).sort(() => Math.random() - .5);
+  teamA = ids.slice(0, 3);
+  teamB = ids.slice(3);
+  renderTeams();
+}
+
+function renderTeams() {
+  const slotA = document.getElementById("team-a");
+  const slotB = document.getElementById("team-b");
+  slotA.innerHTML = teamA.map(id => {
+    const up = UPS.find(u => u.id === id);
+    return `<div class="team-chip"><span>${up.emoji}</span><span>${NAME_MAP[id]}</span></div>`;
+  }).join("");
+  slotB.innerHTML = teamB.map(id => {
+    const up = UPS.find(u => u.id === id);
+    return `<div class="team-chip"><span>${up.emoji}</span><span>${NAME_MAP[id]}</span></div>`;
+  }).join("");
+  document.querySelectorAll(".picker-avatar").forEach(el => {
+    el.classList.remove("in-a", "in-b");
+    if (teamA.includes(el.dataset.id)) el.classList.add("in-a");
+    else if (teamB.includes(el.dataset.id)) el.classList.add("in-b");
+  });
+}
+
+function setPreset(text) {
+  document.getElementById("game-rule").value = text;
+}
+
+async function startGame() {
+  const rule = document.getElementById("game-rule").value.trim();
+  if (!rule) { showGameError("请输入游戏规则"); return; }
+  if (teamA.length === 0 || teamB.length === 0) { showGameError("两队都需要至少一名成员"); return; }
+
+  hideGameError();
+  const btn = document.getElementById("start-game-btn");
+  btn.disabled = true;
+  btn.textContent = "🎬 比赛进行中…";
+
+  const box = document.getElementById("commentary-box");
+  const textEl = document.getElementById("commentary-text");
+  const liveEl = document.getElementById("commentary-live");
+  box.style.display = "block";
+  textEl.innerHTML = "";
+  liveEl.style.display = "inline";
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  let buffer = "";
+
+  try {
+    const resp = await fetch("/api/game", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameRule: rule, teamA, teamB }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const lines = decoder.decode(value).split("\n");
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") break;
+        try {
+          const { text } = JSON.parse(data);
+          if (text) {
+            buffer += text;
+            // 按换行分段渲染
+            const parts = buffer.split("\n\n");
+            buffer = parts.pop();
+            parts.forEach(p => {
+              if (p.trim()) {
+                const para = document.createElement("p");
+                para.textContent = p.trim();
+                textEl.appendChild(para);
+                para.scrollIntoView({ behavior: "smooth", block: "end" });
+              }
+            });
+          }
+        } catch {}
+      }
+    }
+    // 渲染剩余内容
+    if (buffer.trim()) {
+      const para = document.createElement("p");
+      para.textContent = buffer.trim();
+      textEl.appendChild(para);
+    }
+  } catch (e) {
+    showGameError(e.message || "比赛出错了");
+  } finally {
+    liveEl.style.display = "none";
+    btn.disabled = false;
+    btn.textContent = "🎬 再来一场！";
+  }
+}
+
+function showGameError(msg) {
+  const el = document.getElementById("game-error");
+  el.textContent = msg;
+  el.classList.add("visible");
+}
+function hideGameError() {
+  document.getElementById("game-error").classList.remove("visible");
 }
 </script>
 </body>
