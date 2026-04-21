@@ -130,25 +130,6 @@
     .chat-header-info h2 { font-size: 1.1rem; font-weight: 600; }
     .chat-header-info p { font-size: .8rem; color: var(--text-dim); margin-top: 2px; }
 
-    /* API Key bar */
-    .api-bar {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-    .api-bar input {
-      flex: 1;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 9px 14px;
-      color: var(--text);
-      font-size: .85rem;
-      outline: none;
-      transition: border-color .2s;
-    }
-    .api-bar input:focus { border-color: var(--accent2); }
-    .api-bar input::placeholder { color: var(--text-dim); }
 
     /* Messages */
     #messages {
@@ -298,9 +279,6 @@
       <h2 id="chat-name"></h2>
       <p id="chat-desc"></p>
     </div>
-  </div>
-  <div class="api-bar">
-    <input type="password" id="api-key-input" placeholder="粘贴你的 Claude API Key（sk-ant-...）" autocomplete="off" />
   </div>
   <div class="error-bar" id="error-bar"></div>
   <div id="messages"></div>
@@ -566,10 +544,8 @@ document.getElementById("user-input").addEventListener("input", function() {
 
 async function sendMessage() {
   if (!currentUp || isLoading) return;
-  const apiKey = document.getElementById("api-key-input").value.trim();
   const text = document.getElementById("user-input").value.trim();
   if (!text) return;
-  if (!apiKey) { showError("请先输入 Claude API Key"); return; }
 
   hideError();
   document.getElementById("user-input").value = "";
@@ -582,7 +558,7 @@ async function sendMessage() {
   const typingEl = showTyping();
 
   try {
-    const reply = await callClaude(apiKey, currentUp.style, chatHistory);
+    const reply = await callClaude(currentUp.style, chatHistory);
     typingEl.remove();
     appendMessage("assistant", reply, currentUp);
     chatHistory.push({ role: "assistant", content: reply });
@@ -596,32 +572,17 @@ async function sendMessage() {
   }
 }
 
-// ── Claude API 调用 ───────────────────────────────────────────────────────
-async function callClaude(apiKey, systemPrompt, history) {
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+// ── 后端代理调用 ──────────────────────────────────────────────────────────
+async function callClaude(systemPrompt, history) {
+  const resp = await fetch("/api/chat", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: "claude-opus-4-6",
-      max_tokens: 300,
-      system: systemPrompt,
-      messages: history.slice(-20),  // 最多保留20轮上下文
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ system: systemPrompt, messages: history }),
   });
 
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    const msg = err?.error?.message || `HTTP ${resp.status}`;
-    throw new Error(msg);
-  }
-
   const data = await resp.json();
-  return data.content?.[0]?.text || "（无响应）";
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data.text;
 }
 
 // ── UI 工具函数 ───────────────────────────────────────────────────────────
