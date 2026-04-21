@@ -306,6 +306,19 @@
       transition: border-color .2s;
     }
     .preset-btn:hover { border-color: var(--accent); }
+    .preset-btn.active-preset { border-color: var(--accent); background: var(--accent); color: #fff; }
+    .forfeit-btn {
+      padding: 5px 12px;
+      border-radius: 16px;
+      border: 1px solid #ef4444;
+      background: #1f0a0a;
+      color: #fca5a5;
+      font-size: .78rem;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .forfeit-btn:hover:not(:disabled) { background: #ef4444; color: #fff; }
+    .forfeit-btn:disabled { opacity: .35; cursor: not-allowed; }
     .team-slot {
       min-height: 48px;
       background: var(--bg);
@@ -372,11 +385,7 @@
 
     <div class="game-block">
       <label class="game-label">游戏规则</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px" id="preset-btns">
-        <button class="preset-btn" onclick="setPreset('足球踢踢踢：每人轮流颠球，掉球就淘汰，坚持最久的队伍获胜。')">⚽ 足球踢踢踢</button>
-        <button class="preset-btn" onclick="setPreset('击鼓传花：音乐停时手持气球的人要表演节目，连续失误两次淘汰，最后一队获胜。')">🎵 击鼓传花</button>
-        <button class="preset-btn" onclick="setPreset('猜词接力：每队队员背对屏幕，由队友用动作提示猜词，1分钟内猜对最多的队伍获胜。')">🎭 猜词接力</button>
-      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px" id="preset-btns"></div>
       <textarea id="game-rule" rows="3" placeholder="输入自定义游戏规则，或点上方预设…" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:.9rem;resize:vertical;outline:none"></textarea>
     </div>
 
@@ -401,7 +410,8 @@
       <!-- 比赛标题栏 -->
       <div id="match-header" style="background:linear-gradient(135deg,#1a1a2e,#16213e);border:1px solid #2a2a4a;border-radius:12px;padding:16px 20px;margin-bottom:16px;display:none">
         <div style="text-align:center;font-size:.72rem;color:#888;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px">⚡ 比赛直播</div>
-        <div class="match-teams-row" style="display:flex;align-items:flex-start;justify-content:center;gap:8px"></div>
+        <div class="match-teams-row" style="display:flex;align-items:flex-start;justify-content:center;gap:8px;margin-bottom:14px"></div>
+        <div id="forfeit-row" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"></div>
       </div>
 
       <!-- 解说流 -->
@@ -791,12 +801,23 @@ function switchTab(tab) {
   document.getElementById("section-game").style.display = tab === "game" ? "" : "none";
   document.getElementById("tab-chat").classList.toggle("active", tab === "chat");
   document.getElementById("tab-game").classList.toggle("active", tab === "game");
-  if (tab === "game") initGamePicker();
+  if (tab === "game") { initGamePicker(); initPresets(); }
 }
+
+// 初始化预设（只执行一次）
+let presetsInited = false;
+const _origInitPresets = initPresets;
+initPresets = function() {
+  if (presetsInited) return;
+  presetsInited = true;
+  _origInitPresets();
+};
 
 // ── 比赛功能 ──────────────────────────────────────────────────────────────
 // 3组2人同时参赛
 let teams = [[], [], []]; // teams[0..2] 各含2个id
+let forfeits = []; // 已放弃的组索引
+let gameInProgress = false;
 const NAME_MAP = { yuge:"雨哥", amazong:"啊吗粽", liyuan:"力元君", sanmu:"三木", zhbie:"哲别", daxia:"徐大虾" };
 const NICKNAME_MAP = { amazong:"瑞哥", sanmu:"神", zhbie:"哲别", daxia:"虾哥" };
 
@@ -918,8 +939,120 @@ function renderTeams() {
   });
 }
 
+// ── 预设游戏（第6季）────────────────────────────────────────────────────
+const PRESETS = [
+  { ep:183, icon:"🤡", name:"谁是小丑王", rule:"丢3颗球，谁先丢中3个谁赢，表现最差的是小丑王。" },
+  { ep:184, icon:"📜", name:"诗词作作作", rule:"即兴作七言绝句，由观众评分决定胜负。" },
+  { ep:185, icon:"🪃", name:"捆绑回旋镖", rule:"两人绑在一起接回旋镖，接到次数多的队伍获胜。" },
+  { ep:186, icon:"🎮", name:"无畏契约定制关卡", rule:"完成以下关卡：1.1min内被击中次数少于10次；2.闭着眼睛出门什么都不碰；3.不用任何工具将香燃尽；4.10s内跑到指定区域；5.不砸不扔不用火将冰块融化；6.谁先打中瓶子。完成关卡最多的队伍获胜。" },
+  { ep:187, icon:"🎨", name:"色彩测试", rule:"测色觉，三队总分加起来大于等于60分过关，否则失败，单队分数最高者获胜。" },
+  { ep:189, icon:"🥏", name:"飞盘穿桩", rule:"轮流将飞盘穿过1到9号桩，全部穿过的队伍获胜。" },
+  { ep:190, icon:"🥤", name:"纸杯叠叠叠", rule:"两人接力叠纸杯，总用时不超过7秒的队伍获胜。" },
+  { ep:191, icon:"🎱", name:"台球击打乒乓球", rule:"用台球杆击打乒乓球使其入袋，进球最多的队伍获胜。" },
+  { ep:192, icon:"🎾", name:"网球弹进桶", rule:"将网球弹进桶里，成功次数最多的队伍获胜。" },
+  { ep:193, icon:"🔫", name:"无畏契约摆字", rule:"在无畏契约游戏内用枪械摆出2026，摆得最像的队伍获胜。" },
+  { ep:194, icon:"🐜", name:"蚂蚁搬糖", rule:"用最小的力气将糖移动1cm，最接近1cm的队伍获胜。" },
+  { ep:195, icon:"🌡️", name:"测温枪挑战", rule:"用测温枪测到指定温度，最接近目标温度的队伍获胜。" },
+  { ep:196, icon:"🦘", name:"跳远挑战", rule:"原地跳远跳到指定距离，最接近目标距离的队伍获胜。" },
+  { ep:197, icon:"🍦", name:"套雪糕桶", rule:"由近到远逐一套中3个雪糕桶，全部套中的队伍获胜。" },
+  { ep:198, icon:"🤝", name:"默契挑战", rule:"一回合内两人同时吃到同一个食物，默契次数最多的队伍获胜。" },
+  { ep:199, icon:"🏗️", name:"杯子叠到身高", rule:"将杯子叠到与自己身高一样高，先完成的队伍获胜。" },
+  { ep:200, icon:"🏓", name:"夹乒乓球", rule:"10秒内夹起12颗乒乓球，完成的队伍获胜。" },
+  { ep:201, icon:"⭕", name:"圆圈踏步", rule:"在圆圈内原地踏步60秒不出圈，坚持最久的队伍获胜。" },
+  { ep:202, icon:"⚡", name:"手摇发电", rule:"用手摇发电机为相机充电到3%，最快完成的队伍获胜。" },
+  { ep:205, icon:"👶", name:"猜小时候照片", rule:"猜出谁是照片里的人，猜对最多的队伍获胜。" },
+  { ep:206, icon:"🫘", name:"分红豆绿豆", rule:"将碗中的红豆和绿豆分开，最快分完的队伍获胜。" },
+  { ep:207, icon:"🍹", name:"榨甘蔗汁", rule:"不用榨汁机榨出甘蔗汁，榨出最多的队伍获胜。" },
+  { ep:208, icon:"🎬", name:"猜豆瓣评分", rule:"猜电影的豆瓣评分，最接近真实分数的队伍获胜。" },
+  { ep:210, icon:"🎨", name:"调色挑战", rule:"调出指定的颜色，调得最接近的队伍获胜。" },
+  { ep:211, icon:"👜", name:"沙包投洞", rule:"两人连续将沙包投进洞，连续投中次数最多的队伍获胜。" },
+  { ep:212, icon:"🖱️", name:"无畏鼠标靶场", rule:"用不熟悉的鼠标速度在无畏契约靶场得15分，最快完成的队伍获胜。" },
+  { ep:213, icon:"🗣️", name:"普通话测试", rule:"普通话测试得分大于等于90分，分数最高的队伍获胜。" },
+  { ep:214, icon:"🚁", name:"竹蜻蜓入桶", rule:"让竹蜻蜓飞入桶中，成功次数最多的队伍获胜。" },
+  { ep:215, icon:"🤸", name:"单手轮流抓杆", rule:"一只手轮流抓两根杆子5次，最快完成的队伍获胜。" },
+  { ep:216, icon:"🔔", name:"蒙眼敲锣", rule:"原地转3圈后蒙着眼，10秒内敲到锣，最快敲到的队伍获胜。" },
+  { ep:217, icon:"🔢", name:"计算器+1到100", rule:"计算器按+1，10秒内按到100，最快完成的队伍获胜。" },
+  { ep:218, icon:"🖼️", name:"照片P成别人", rule:"将自己的照片P成别人的样子，最像的队伍获胜。" },
+  { ep:221, icon:"✈️", name:"纸飞机对撞", rule:"折纸飞机并投掷，使两架纸飞机在空中对撞，最先对撞成功的队伍获胜。" },
+  { ep:222, icon:"🎵", name:"乐器演奏猜歌", rule:"用抽到的乐器演奏一首歌让其他队猜，猜出最多的队伍获胜。" },
+  { ep:223, icon:"🎯", name:"飞镖指定格子", rule:"扎飞镖到指定格子，最先命中的队伍获胜。" },
+  { ep:224, icon:"🔔", name:"猜铃铛数量", rule:"猜一共有几个铃铛在摇，最接近正确数量的队伍获胜。" },
+  { ep:225, icon:"🎳", name:"接力打保龄球", rule:"两人一人一下接力打保龄球，打倒球瓶最多的队伍获胜。" },
+  { ep:226, icon:"🪃", name:"飞刀打玩偶", rule:"5个飞刀打中3个玩偶，最先完成的队伍获胜。" },
+  { ep:227, icon:"🖌️", name:"画风景", rule:"画一幅风景画，由观众投票，得票最多的队伍获胜。" },
+  { ep:228, icon:"🎼", name:"复刻音准", rule:"复刻出指定的音准，最接近原音的队伍获胜。" },
+  { ep:229, icon:"🧺", name:"空接投篮", rule:"空接5个来回并投进篮筐，最快完成的队伍获胜。" },
+  { ep:230, icon:"🃏", name:"纸牌扎气球", rule:"用抛出的纸牌扎破气球，最先扎破的队伍获胜。" },
+  { ep:231, icon:"🗺️", name:"省份猜猜猜", rule:"根据提示猜省份，猜对最多的队伍获胜。" },
+  { ep:232, icon:"π",  name:"背圆周率后100位", rule:"背出圆周率后100位，背得最准确的队伍获胜。" },
+  { ep:233, icon:"👤", name:"影子猜猜猜", rule:"一个人比划影子，一个人猜，猜对最多的队伍获胜。" },
+  { ep:234, icon:"🌀", name:"走迷宫", rule:"走出迷宫，最快完成的队伍获胜。" },
+  { ep:235, icon:"🏓", name:"决战投球", rule:"投乒乓球和网球进桶，投进最多的队伍获胜。" },
+];
+
+function initPresets() {
+  const container = document.getElementById("preset-btns");
+  PRESETS.forEach(p => {
+    const btn = document.createElement("button");
+    btn.className = "preset-btn";
+    btn.textContent = `${p.icon} EP${p.ep} ${p.name}`;
+    btn.onclick = () => {
+      document.getElementById("game-rule").value = `EP${p.ep}《${p.name}》：${p.rule}`;
+      document.querySelectorAll(".preset-btn").forEach(b => b.classList.remove("active-preset"));
+      btn.classList.add("active-preset");
+    };
+    container.appendChild(btn);
+  });
+}
+
 function setPreset(text) {
   document.getElementById("game-rule").value = text;
+}
+
+// ── 放弃功能 ─────────────────────────────────────────────────────────────
+function initForfeitButtons() {
+  forfeits = [];
+  const row = document.getElementById("forfeit-row");
+  row.innerHTML = "";
+  teams.forEach((t, i) => {
+    const color = TEAM_COLORS[i];
+    const name = getTeamDisplayName(i);
+    const members = t.map(id => NAME_MAP[id]).join("、");
+    // 检查力元君是否在这组
+    const hasLiyuan = t.includes("liyuan");
+    const btn = document.createElement("button");
+    btn.className = "forfeit-btn";
+    btn.id = `forfeit-btn-${i}`;
+    btn.innerHTML = `🏳️ ${name} 放弃${hasLiyuan ? " <span style='font-size:.7rem;opacity:.7'>（力元随时准备放弃）</span>" : ""}`;
+    btn.onclick = () => forfeit(i);
+    row.appendChild(btn);
+  });
+}
+
+function forfeit(teamIdx) {
+  if (!gameInProgress || forfeits.includes(teamIdx)) return;
+  forfeits.push(teamIdx);
+  const btn = document.getElementById(`forfeit-btn-${teamIdx}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `😮 ${getTeamDisplayName(teamIdx)} 已放弃`;
+    btn.style.borderColor = "#666";
+    btn.style.color = "#666";
+  }
+  // 追加一张放弃解说卡
+  const name = getTeamDisplayName(teamIdx);
+  const members = teams[teamIdx].map(id => NAME_MAP[id]);
+  const hasLiyuan = teams[teamIdx].includes("liyuan");
+  let msg;
+  if (hasLiyuan) {
+    const partner = members.find(m => m !== "力元君");
+    msg = `💥 重大突发！力元君这边的【${name}】宣布放弃！${partner}还没反应过来，力元君已经率先喊出"我不行了"——非酋体质再次应验，这一幕把观众都给整笑了。场上剩余两组继续鏖战！`;
+  } else {
+    msg = `🏳️ 意外！【${name}】（${members.join("、")}）宣布放弃！这操作让解说员都愣了一下——到底是真放弃还是骚操作？不管了，场上只剩两组继续战斗！`;
+  }
+  const card = addCommentaryCard("", paraCount);
+  paraCount++;
+  typeText(card, msg, null);
 }
 
 // 段落序号 → 样式配置
@@ -1011,7 +1144,7 @@ async function startGame() {
 
   // 重置
   paraCount = 0; currentCard = null; typeQueue = []; isTyping = false;
-  funNameIdx = 0;
+  funNameIdx = 0; gameInProgress = false; forfeits = [];
   const feed = document.getElementById("commentary-feed");
   feed.innerHTML = "";
 
@@ -1029,6 +1162,8 @@ async function startGame() {
     </div>`;
   }).join(`<div style="font-size:1.1rem;font-weight:800;color:#888;align-self:center;padding:0 4px">·</div>`);
 
+  initForfeitButtons();
+  gameInProgress = true;
   document.getElementById("commentary-loading").style.display = "block";
   box.scrollIntoView({ behavior: "smooth", block: "start" });
 
@@ -1116,8 +1251,11 @@ async function startGame() {
     document.getElementById("commentary-loading").style.display = "none";
     showGameError(e.message || "比赛出错了");
   } finally {
+    gameInProgress = false;
     btn.disabled = false;
     btn.textContent = "🎬 再来一场！";
+    // 禁用所有放弃按钮
+    document.querySelectorAll(".forfeit-btn").forEach(b => b.disabled = true);
   }
 }
 
